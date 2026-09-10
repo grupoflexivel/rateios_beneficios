@@ -198,5 +198,13 @@
         </section>
       </main>
     </div>
+    <script>
+      const converterSelect = document.getElementById("converter_id");
+      const pdfInput = document.getElementById("pdf");
+
+      converterSelect.addEventListener("change", () => {
+        pdfInput.value = "";
+      });
+    </script>
   </body>
 </html>

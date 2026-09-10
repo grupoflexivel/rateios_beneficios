@@ -5,12 +5,14 @@ from typing import Dict, List, Type
 from rateiosrh.core.exceptions import UnknownParserError
 from rateiosrh.parsers.base import BaseParser
 from rateiosrh.parsers.bradesco_dental import BradescoDentalParser
+from rateiosrh.parsers.bradesco_seguros import BradescoSegurosParser
 from rateiosrh.parsers.unimed import UnimedParser
 
 
 PARSER_REGISTRY: Dict[str, Type[BaseParser]] = {
     UnimedParser.parser_id: UnimedParser,
     BradescoDentalParser.parser_id: BradescoDentalParser,
+    BradescoSegurosParser.parser_id: BradescoSegurosParser,
 }
 
 

@@ -13,6 +13,10 @@ from .exceptions import PdfStructureError
 NUMBER_TOKEN = re.compile(
     rb"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$"
 )
+INLINE_IMAGE_RE = re.compile(rb"(?<!\S)BI(?=\s)")
+INLINE_IMAGE_ID_RE = re.compile(rb"(?<!\S)ID(?=\s)")
+INLINE_IMAGE_END_RE = re.compile(rb"(?<!\S)EI(?=\s)")
+PDF_WHITESPACE = b" \t\r\n\f\0"
 
 
 @dataclass(frozen=True)
@@ -115,6 +119,51 @@ class PdfDocument:
         return streams
 
 
+def remove_inline_images(stream: bytes) -> bytes:
+    """Remove inline image payloads before tokenizing PDF text operators."""
+
+    chunks: List[bytes] = []
+    cursor = 0
+    while True:
+        image_match = INLINE_IMAGE_RE.search(stream, cursor)
+        if image_match is None:
+            chunks.append(stream[cursor:])
+            break
+
+        image_start = image_match.start()
+        id_match = INLINE_IMAGE_ID_RE.search(stream, image_match.end())
+        if id_match is None:
+            raise PdfStructureError("Imagem inline sem operador ID no stream PDF.")
+
+        data_start = id_match.end()
+        while stream[data_start : data_start + 1] in PDF_WHITESPACE:
+            data_start += 1
+        dictionary = stream[image_match.end() : id_match.start()]
+        image_end = None
+
+        for end_match in INLINE_IMAGE_END_RE.finditer(stream, data_start):
+            candidate = end_match.start()
+            payload = stream[data_start:candidate].rstrip(PDF_WHITESPACE)
+            if b"/FlateDecode" not in dictionary:
+                image_end = candidate
+                break
+            try:
+                decompressor = zlib.decompressobj()
+                decompressor.decompress(payload)
+            except zlib.error:
+                continue
+            if decompressor.eof and not decompressor.unused_data:
+                image_end = candidate
+                break
+
+        if image_end is None:
+            raise PdfStructureError("Imagem inline sem terminador no stream PDF.")
+
+        chunks.append(stream[cursor:image_start])
+        cursor = image_end + len(b"EI")
+    return b"".join(chunks)
+
+
 def _tokens(data: bytes) -> Iterable[Tuple[str, object]]:
     index = 0
     while index < len(data):
@@ -184,7 +233,7 @@ def _text_spans(stream: bytes) -> List[TextSpan]:
     y = 0.0
     leading = 0.0
 
-    for kind, value in _tokens(stream):
+    for kind, value in _tokens(remove_inline_images(stream)):
         if kind in ("str", "[", "]") or (kind == "tok" and NUMBER_TOKEN.match(value)):  # type: ignore[arg-type]
             operands.append((kind, value))
             continue

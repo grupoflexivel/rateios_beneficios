@@ -44,6 +44,24 @@ def test_reader_finds_seven_pages_in_bradesco_dental_reference():
     assert len(document.page_streams()) == 7
 
 
+def test_common_reader_removes_inline_images_with_pdf_whitespace():
+    import zlib
+
+    from rateiosrh.core.pdf_reader import remove_inline_images
+
+    image = zlib.compress(b"image payload")
+    stream = (
+        b"q BI \r\n/W 1\r\n/H 1\r\n/F /FlateDecode\r\nID\r\n"
+        + image
+        + b"\r\n EI\t\r\nBT\n(visible)Tj\nET"
+    )
+
+    cleaned = remove_inline_images(stream)
+
+    assert image not in cleaned
+    assert b"(visible)Tj" in cleaned
+
+
 @pytest.mark.parametrize(
     ("pages_type", "page_type"),
     [
@@ -169,14 +187,16 @@ def test_unimed_parser_dataframe_validation_reports_empty_required_field():
     pd.testing.assert_frame_equal(frame, before)
 
 
-def test_registry_lists_only_implemented_converters():
+def test_registry_lists_all_implemented_converters():
     from rateiosrh.registry import get_parser, list_parsers
 
     assert [item["id"] for item in list_parsers()] == [
         "unimed",
         "bradesco_dental",
+        "bradesco_seguros",
     ]
     assert get_parser("bradesco_dental").parser_id == "bradesco_dental"
+    assert get_parser("bradesco_seguros").parser_id == "bradesco_seguros"
 
 
 def test_registry_rejects_unknown_converter():

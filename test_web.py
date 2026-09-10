@@ -40,6 +40,13 @@ def test_index_is_reduced_to_branding_and_conversion_card():
     assert b"box-shadow: 6px 6px 0 var(--brass)" not in response.data
 
 
+def test_index_clears_pdf_when_layout_changes():
+    response = create_app().test_client().get("/")
+
+    assert b'converterSelect.addEventListener("change"' in response.data
+    assert b'pdfInput.value = ""' in response.data
+
+
 def test_branding_assets_are_served():
     client = create_app().test_client()
 
@@ -93,6 +100,22 @@ def test_convert_rejects_pdf_for_wrong_parser():
     assert "incompatível".encode() in response.data
 
 
+def test_convert_rejects_bradesco_seguros_pdf_for_unimed():
+    client = create_app().test_client()
+    with open("bradescoseguros.pdf", "rb") as source:
+        response = client.post(
+            "/convert",
+            data={
+                "converter_id": "unimed",
+                "pdf": (BytesIO(source.read()), "entrada.pdf"),
+            },
+            content_type="multipart/form-data",
+        )
+
+    assert response.status_code == 422
+    assert "incompatível".encode() in response.data
+
+
 def test_convert_rejects_invalid_pdf_as_bad_request():
     client = create_app().test_client()
     response = client.post(
@@ -105,6 +128,28 @@ def test_convert_rejects_invalid_pdf_as_bad_request():
     )
 
     assert response.status_code == 400
+
+
+def test_convert_reports_unreadable_pdf_to_the_user(monkeypatch):
+    from rateiosrh.core.exceptions import PdfStructureError
+    from rateiosrh.web import routes
+
+    def fail_conversion(self, parser_id, pdf_path):
+        raise PdfStructureError("estrutura inválida")
+
+    monkeypatch.setattr(routes.ConversionService, "convert", fail_conversion)
+    client = create_app().test_client()
+    response = client.post(
+        "/convert",
+        data={
+            "converter_id": "unimed",
+            "pdf": (BytesIO(b"%PDF- invalid structure"), "entrada.pdf"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert "PDF enviado é inválido".encode() in response.data
 
 
 def test_convert_removes_temporary_directory_after_successful_download(

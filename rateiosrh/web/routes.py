@@ -20,6 +20,7 @@ from flask import (
 from rateiosrh.core.exceptions import (
     DataFrameValidationError,
     LayoutMismatchError,
+    PdfStructureError,
     UnknownParserError,
 )
 from rateiosrh.registry import list_parsers
@@ -75,12 +76,10 @@ def convert():
     try:
         upload.save(input_path)
         if input_path.read_bytes()[:5] != b"%PDF-":
-            shutil.rmtree(temporary_directory, ignore_errors=True)
             return _form_response("O arquivo enviado não é um PDF válido.", 400)
         result = ConversionService().convert(parser_id, input_path)
         ExcelExporter.export(result.dataframe, output_path, result.observations)
         workbook_data = output_path.read_bytes()
-        shutil.rmtree(temporary_directory, ignore_errors=True)
         response = send_file(
             BytesIO(workbook_data),
             mimetype=XLSX_MIMETYPE,
@@ -88,22 +87,24 @@ def convert():
             download_name=f"rateamento-{result.parser_id}.xlsx",
         )
         return response
+    except PdfStructureError:
+        return _form_response(
+            "O PDF enviado é inválido ou não pôde ser lido.", 400
+        )
     except UnknownParserError:
-        shutil.rmtree(temporary_directory, ignore_errors=True)
         return _form_response("O conversor selecionado não existe.", 400)
     except LayoutMismatchError:
-        shutil.rmtree(temporary_directory, ignore_errors=True)
         return _form_response(
             "O PDF é incompatível com o conversor selecionado.", 422
         )
     except DataFrameValidationError:
-        shutil.rmtree(temporary_directory, ignore_errors=True)
         return _form_response(
             "O relatório não passou na validação dos dados extraídos.", 422
         )
     except Exception:
         LOGGER.exception("Falha interna durante a conversão web.")
-        shutil.rmtree(temporary_directory, ignore_errors=True)
         return _form_response(
             "Ocorreu uma falha interna ao gerar o arquivo.", 500
         )
+    finally:
+        shutil.rmtree(temporary_directory, ignore_errors=True)
