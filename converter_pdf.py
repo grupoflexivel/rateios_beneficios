@@ -12,11 +12,13 @@ import logging
 from pathlib import Path
 from typing import Optional, Sequence
 
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
-from openpyxl.utils import get_column_letter
+import pandas as pd
 
-from rateiosrh.core.exceptions import PdfStructureError
+from rateiosrh.core.exceptions import (
+    DataFrameValidationError,
+    LayoutMismatchError,
+    PdfStructureError,
+)
 from rateiosrh.core.pdf_reader import PdfDocument, TextSpan, clean, group_rows
 from rateiosrh.parsers.unimed import (
     DEFAULT_LAYOUT,
@@ -35,34 +37,18 @@ from rateiosrh.parsers.unimed import (
     split_code_and_name,
     validate_records,
 )
+from rateiosrh.services.conversion import ConversionService
+from rateiosrh.services.excel_exporter import ExcelExporter
 
 
 LOGGER = logging.getLogger("converter_pdf")
 
 
-def _style_sheet(sheet, widths: Sequence[int]) -> None:
-    sheet.freeze_panes = "A2"
-    sheet.auto_filter.ref = f"A1:{get_column_letter(len(widths))}{sheet.max_row}"
-    header_fill = PatternFill("solid", fgColor="D9EAF7")
-    for cell in sheet[1]:
-        cell.font = Font(bold=True)
-        cell.fill = header_fill
-    for index, width in enumerate(widths, start=1):
-        sheet.column_dimensions[get_column_letter(index)].width = width
-    for row in sheet.iter_rows():
-        for cell in row:
-            cell.number_format = "@"
-
-
 def write_workbook(result: ExtractionResult, output_path: Path) -> Path:
-    """Write the main launch table and a separate validation-observation sheet."""
+    """Write a legacy extraction result through the generic Excel exporter."""
 
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = "Lançamentos"
-    sheet.append(HEADERS)
-    for record in result.records:
-        sheet.append(
+    frame = pd.DataFrame(
+        [
             [
                 record.codigo_beneficiario,
                 record.beneficiario,
@@ -75,29 +61,11 @@ def write_workbook(result: ExtractionResult, output_path: Path) -> Path:
                 record.valor_total,
                 record.mensagem,
             ]
-        )
-    _style_sheet(sheet, [25, 38, 24, 10, 14, 13, 15, 16, 15, 28])
-
-    observations = workbook.create_sheet("Observações")
-    observations.append(["TIPO", "DETALHE"])
-    for message in validate_records(result):
-        observations.append(["VALIDAÇÃO", message])
-    observations.column_dimensions["A"].width = 16
-    observations.column_dimensions["B"].width = 120
-    observations.freeze_panes = "A2"
-    observations.auto_filter.ref = f"A1:B{observations.max_row}"
-    for cell in observations[1]:
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill("solid", fgColor="FFF2CC")
-    for row in observations.iter_rows():
-        for cell in row:
-            cell.number_format = "@"
-
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    workbook.save(output_path)
-    LOGGER.info("Excel gerado: %s", output_path)
-    return output_path
+            for record in result.records
+        ],
+        columns=HEADERS,
+    ).astype("string")
+    return ExcelExporter.export(frame, output_path, validate_records(result))
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -112,7 +80,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
 
 def run(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_argument_parser()
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        return int(exc.code)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s: %(message)s",
@@ -123,21 +94,24 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         return 2
     output = args.output or args.pdf.with_suffix(".xlsx")
     try:
-        result = extract_records(args.pdf)
-        observations = validate_records(result)
-        if observations:
-            LOGGER.warning("Validações com observações: %d", len(observations))
-            for message in observations:
+        conversion = ConversionService().convert("unimed", args.pdf)
+        if conversion.observations:
+            LOGGER.warning(
+                "Validações com observações: %d", len(conversion.observations)
+            )
+            for message in conversion.observations:
                 LOGGER.warning(message)
-        unique_beneficiaries = {
-            record.codigo_beneficiario
-            for record in result.records
-            if record.codigo_beneficiario and record.source_beneficiary_repeated
-        }
-        LOGGER.info("Beneficiários/dependentes identificados: %d", len(unique_beneficiaries))
-        write_workbook(result, output)
+        ExcelExporter.export(conversion.dataframe, output, conversion.observations)
+        LOGGER.info("Excel gerado: %s", output)
         return 0
-    except (FileNotFoundError, PdfStructureError, OSError, ValueError) as exc:
+    except (
+        DataFrameValidationError,
+        FileNotFoundError,
+        LayoutMismatchError,
+        PdfStructureError,
+        OSError,
+        ValueError,
+    ) as exc:
         LOGGER.error("Falha na conversão: %s", exc)
         return 1
 

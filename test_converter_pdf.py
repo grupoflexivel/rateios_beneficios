@@ -1,6 +1,8 @@
 from pathlib import Path
 from zipfile import ZipFile
 from xml.etree import ElementTree as ET
+import inspect
+import logging
 
 import converter_pdf
 
@@ -84,3 +86,84 @@ def test_cli_writes_ten_column_workbook(tmp_path):
 
 def test_cli_rejects_missing_input(tmp_path):
     assert converter_pdf.run([str(tmp_path / "missing.pdf")]) == 2
+
+
+def test_legacy_cli_rejects_incompatible_layout(tmp_path):
+    output = tmp_path / "nao_deve_existir.xlsx"
+
+    assert converter_pdf.run(
+        ["FLEXIV_1166046_1_082026.pdf", "-o", str(output)]
+    ) == 1
+    assert not output.exists()
+
+
+def test_legacy_cli_returns_error_code_for_invalid_arguments():
+    assert converter_pdf.run([]) == 2
+
+
+def test_cli_logs_pages_lines_and_observations(tmp_path, caplog):
+    output = tmp_path / "resultado.xlsx"
+    from cli import run
+
+    with caplog.at_level(logging.INFO, logger="rateiosrh.cli"):
+        assert run(
+            [
+                "bradesco_dental",
+                "FLEXIV_1166046_1_082026.pdf",
+                "-o",
+                str(output),
+            ]
+        ) == 0
+
+    assert "7 páginas" in caplog.text
+    assert "279 linhas" in caplog.text
+    assert "0 observações" in caplog.text
+
+
+def test_legacy_facade_exports_keep_their_public_signatures():
+    assert callable(converter_pdf.extract_records)
+    assert callable(converter_pdf.validate_records)
+    assert callable(converter_pdf.write_workbook)
+    assert callable(converter_pdf.run)
+    assert list(inspect.signature(converter_pdf.extract_records).parameters) == [
+        "pdf_path",
+        "layout",
+    ]
+    assert list(inspect.signature(converter_pdf.validate_records).parameters) == [
+        "result",
+    ]
+    assert list(inspect.signature(converter_pdf.write_workbook).parameters) == [
+        "result",
+        "output_path",
+    ]
+    assert list(inspect.signature(converter_pdf.run).parameters) == ["argv"]
+
+
+def test_cli_writes_bradesco_dental_workbook(tmp_path):
+    output = tmp_path / "resultado.xlsx"
+    from cli import run
+
+    assert run(
+        [
+            "bradesco_dental",
+            "FLEXIV_1166046_1_082026.pdf",
+            "-o",
+            str(output),
+        ]
+    ) == 0
+    assert output.exists()
+
+
+def test_cli_rejects_incompatible_selected_parser(tmp_path):
+    output = tmp_path / "nao_deve_existir.xlsx"
+    from cli import run
+
+    assert run(
+        [
+            "bradesco_dental",
+            "ANALITICO_TAXA_0054041451-1.PDF",
+            "-o",
+            str(output),
+        ]
+    ) != 0
+    assert not output.exists()

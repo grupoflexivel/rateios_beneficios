@@ -33,3 +33,8 @@ class BaseParser(ABC):
         """Return a copy of the parser's declared column order."""
 
         return list(self.columns)
+
+    def get_observations(self) -> List[str]:
+        """Return non-fatal extraction observations collected by the parser."""
+
+        return []

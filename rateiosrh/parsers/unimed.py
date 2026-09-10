@@ -352,6 +352,14 @@ class UnimedParser(BaseParser):
     display_name = "Converter UNIMED"
     columns = HEADERS
 
+    def __init__(self) -> None:
+        self._observations: List[str] = []
+
+    def get_observations(self) -> List[str]:
+        """Expose non-fatal observations generated during the last parse."""
+
+        return list(self._observations)
+
     def validate_dataframe(self, df: pd.DataFrame) -> List[str]:
         """Validate schema and the same required fields used by the legacy API."""
 
@@ -398,6 +406,7 @@ class UnimedParser(BaseParser):
         """Return the ten public UNIMED fields as textual columns."""
 
         result = extract_records(pdf_path)
+        self._observations = list(result.observations)
         rows = [
             [
                 _dataframe_value(record.codigo_beneficiario),
