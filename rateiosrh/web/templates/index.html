@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#17241f">
+    <link rel="icon" href="{{ url_for('web.favicon') }}" type="image/x-icon">
+    <title>Rateamento de Benefícios</title>
+    <style>
+      :root {
+        --ink: #17241f;
+        --ink-soft: #52605a;
+        --paper: #f3efe5;
+        --teal: #0f6d68;
+        --teal-dark: #094b48;
+        --white: #fffdf8;
+        --line: rgba(23, 36, 31, .2);
+        --signal: #df6339;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        min-width: 320px;
+        margin: 0;
+        color: var(--ink);
+        background: var(--paper);
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
+      }
+
+      .page {
+        width: min(760px, calc(100% - 40px));
+        margin: 0 auto;
+        padding: 34px 0 56px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        padding: 8px 0 26px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brand-mark {
+        display: block;
+        width: 150px;
+        min-width: 150px;
+        padding: 0;
+        background: transparent;
+        border: 0;
+      }
+
+      .brand-mark img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      h1, h2 {
+        margin: 0;
+        font-family: Georgia, "Times New Roman", serif;
+        font-weight: 400;
+        letter-spacing: -.035em;
+      }
+
+      h1 { font-size: clamp(2rem, 5vw, 3.4rem); line-height: 1; }
+
+      .card {
+        width: min(540px, 100%);
+        margin: 58px auto 0;
+        padding: 30px;
+        background: var(--white);
+        border: 1px solid var(--line);
+      }
+
+      .card-heading {
+        padding-bottom: 18px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .card-heading h2 { font-size: 1.8rem; }
+
+      form { padding-top: 24px; }
+
+      .field + .field { margin-top: 22px; }
+
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-size: .78rem;
+        font-weight: 800;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+      }
+
+      select, input[type="file"] {
+        width: 100%;
+        min-height: 48px;
+        color: var(--ink);
+        background: var(--white);
+        border: 1px solid rgba(23, 36, 31, .32);
+        border-radius: 0;
+        font: inherit;
+      }
+
+      select { padding: 0 12px; }
+
+      input[type="file"] { padding: 11px 12px; }
+
+      select:focus-visible, input[type="file"]:focus-visible, button:focus-visible {
+        outline: 3px solid rgba(223, 99, 57, .4);
+        outline-offset: 3px;
+      }
+
+      button {
+        width: 100%;
+        min-height: 54px;
+        margin-top: 28px;
+        padding: 12px 18px;
+        color: var(--white);
+        background: var(--teal);
+        border: 0;
+        border-bottom: 4px solid var(--teal-dark);
+        border-radius: 0;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 800;
+        letter-spacing: .04em;
+        transition: background .18s ease, transform .18s ease;
+      }
+
+      button:hover { background: var(--teal-dark); transform: translateY(-2px); }
+
+      .error {
+        margin: 18px 0 0;
+        padding: 13px 14px;
+        color: #8f321d;
+        background: #fbe8df;
+        border-left: 4px solid var(--signal);
+        font-size: .88rem;
+        line-height: 1.45;
+      }
+
+      @media (max-width: 520px) {
+        .page { width: min(100% - 28px, 540px); padding-top: 20px; }
+        .topbar { align-items: flex-start; gap: 16px; }
+        .brand-mark { width: 112px; min-width: 112px; }
+        h1 { font-size: 2rem; line-height: 1.02; }
+        .card { margin-top: 38px; padding: 22px; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          scroll-behavior: auto !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="topbar">
+        <a class="brand-mark" href="{{ url_for('web.index') }}" aria-label="Flexível">
+          <img src="{{ url_for('web.logo') }}" alt="Flexível">
+        </a>
+        <h1>Rateamento de Benefícios</h1>
+      </header>
+
+      <main>
+        <section class="card" aria-labelledby="form-title">
+          <div class="card-heading">
+            <h2 id="form-title">Iniciar conversão</h2>
+          </div>
+
+          <form action="{{ url_for('web.convert') }}" method="post" enctype="multipart/form-data">
+            <div class="field">
+              <label for="converter_id">Layout do relatório</label>
+              <select id="converter_id" name="converter_id" required>
+                <option value="" selected disabled>Selecione uma opção</option>
+                {% for parser in parsers %}
+                  <option value="{{ parser.id }}">{{ parser.display_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="pdf">Arquivo PDF</label>
+              <input id="pdf" name="pdf" type="file" accept=".pdf,application/pdf" required>
+            </div>
+
+            <button type="submit">Gerar arquivo Excel</button>
+          </form>
+
+          {% if error %}
+            <p class="error" role="alert">{{ error }}</p>
+          {% endif %}
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
